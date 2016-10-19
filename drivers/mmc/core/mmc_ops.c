@@ -487,65 +487,15 @@ int __mmc_switch_cmdq_mode(struct mmc_command *cmd, u8 set, u8 index, u8 value,
 }
 EXPORT_SYMBOL(__mmc_switch_cmdq_mode);
 
-/**
- *	__mmc_switch - modify EXT_CSD register
- *	@card: the MMC card associated with the data transfer
- *	@set: cmd set values
- *	@index: EXT_CSD register index
- *	@value: value to program into EXT_CSD register
- *	@timeout_ms: timeout (ms) for operation performed by register write,
- *                   timeout of zero implies maximum possible timeout
- *	@use_busy_signal: use the busy signal as response type
- *	@send_status: send status cmd to poll for busy
- *	@ignore_crc: ignore CRC errors when sending status cmd to poll for busy
- *
- *	Modifies the EXT_CSD register for selected card.
- */
-int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
-		unsigned int timeout_ms, bool use_busy_signal, bool send_status,
-		bool ignore_crc)
+int mmc_poll_for_busy(struct mmc_card *card, unsigned int timeout_ms,
+			bool send_status, bool ignore_crc)
 {
 	struct mmc_host *host = card->host;
 	int err;
-	struct mmc_command cmd = {0};
 	unsigned long timeout;
 	u32 status = 0;
-	bool use_r1b_resp = use_busy_signal;
 	bool expired = false;
 	bool busy = false;
-
-	mmc_retune_hold(host);
-
-	/*
-	 * If the cmd timeout and the max_busy_timeout of the host are both
-	 * specified, let's validate them. A failure means we need to prevent
-	 * the host from doing hw busy detection, which is done by converting
-	 * to a R1 response instead of a R1B.
-	 */
-	if (timeout_ms && host->max_busy_timeout &&
-		(timeout_ms > host->max_busy_timeout))
-		use_r1b_resp = false;
-
-	mmc_prepare_switch(&cmd, index, value, set, timeout_ms,
-			use_r1b_resp);
-
-	if (index == EXT_CSD_SANITIZE_START)
-		cmd.sanitize_busy = true;
-
-	err = mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
-	if (err)
-		goto out;
-
-	/* No need to check card status in case of unblocking command */
-	if (!use_busy_signal)
-		goto out;
-
-	/*
-	 * CRC errors shall only be ignored in cases were CMD13 is used to poll
-	 * to detect busy completion.
-	 */
-	if ((host->caps & MMC_CAP_WAIT_WHILE_BUSY) && use_r1b_resp)
-		ignore_crc = false;
 
 	/* We have an unspecified cmd timeout, use the fallback value. */
 	if (!timeout_ms) {
@@ -600,6 +550,68 @@ int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 	} while (R1_CURRENT_STATE(status) == R1_STATE_PRG || busy);
 
 	err = mmc_switch_status_error(host, status);
+
+	return err;
+}
+
+/**
+ *	__mmc_switch - modify EXT_CSD register
+ *	@card: the MMC card associated with the data transfer
+ *	@set: cmd set values
+ *	@index: EXT_CSD register index
+ *	@value: value to program into EXT_CSD register
+ *	@timeout_ms: timeout (ms) for operation performed by register write,
+ *                   timeout of zero implies maximum possible timeout
+ *	@use_busy_signal: use the busy signal as response type
+ *	@send_status: send status cmd to poll for busy
+ *	@ignore_crc: ignore CRC errors when sending status cmd to poll for busy
+ *
+ *	Modifies the EXT_CSD register for selected card.
+ */
+int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
+		unsigned int timeout_ms, bool use_busy_signal, bool send_status,
+		bool ignore_crc)
+{
+	struct mmc_host *host = card->host;
+	int err;
+	struct mmc_command cmd = {0};
+	bool use_r1b_resp = use_busy_signal;
+
+	mmc_retune_hold(host);
+
+	/*
+	 * If the cmd timeout and the max_busy_timeout of the host are both
+	 * specified, let's validate them. A failure means we need to prevent
+	 * the host from doing hw busy detection, which is done by converting
+	 * to a R1 response instead of a R1B.
+	 */
+	if (timeout_ms && host->max_busy_timeout &&
+		(timeout_ms > host->max_busy_timeout))
+		use_r1b_resp = false;
+
+	mmc_prepare_switch(&cmd, index, value, set, timeout_ms,
+			use_r1b_resp);
+
+	if (index == EXT_CSD_SANITIZE_START)
+		cmd.sanitize_busy = true;
+
+	err = mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
+	if (err)
+		goto out;
+
+	/* No need to check card status in case of unblocking command */
+	if (!use_busy_signal)
+		goto out;
+
+	/*
+	 * CRC errors shall only be ignored in cases were CMD13 is used to poll
+	 * to detect busy completion.
+	 */
+	if ((host->caps & MMC_CAP_WAIT_WHILE_BUSY) && use_r1b_resp)
+		ignore_crc = false;
+
+	/* Let's try to poll to find out when the command is completed. */
+	err = mmc_poll_for_busy(card, timeout_ms, send_status, ignore_crc);
 out:
 	mmc_retune_release(host);
 
