@@ -216,8 +216,219 @@ int __cold register_random_ready_notifier(struct notifier_block *nb)
 	unsigned long flags;
 	int ret = -EALREADY;
 
-	if (crng_ready())
-		return ret;
+
+	if (!spin_trylock_irqsave(&primary_crng.lock, flags))
+		return 0;
+	if (crng_init != 0) {
+		spin_unlock_irqrestore(&primary_crng.lock, flags);
+		return 0;
+	}
+	p = (unsigned char *) &primary_crng.state[4];
+	while (len > 0 && crng_init_cnt < CRNG_INIT_CNT_THRESH) {
+		p[crng_init_cnt % CHACHA20_KEY_SIZE] ^= *cp;
+		cp++; crng_init_cnt++; len--;
+	}
+	if (crng_init_cnt >= CRNG_INIT_CNT_THRESH) {
+		crng_init = 1;
+		wake_up_interruptible(&crng_init_wait);
+		pr_notice("random: fast init done\n");
+	}
+	spin_unlock_irqrestore(&primary_crng.lock, flags);
+	return 1;
+}
+
+#ifdef CONFIG_NUMA
+static void do_numa_crng_init(struct work_struct *work)
+{
+	int i;
+	struct crng_state *crng;
+	struct crng_state **pool;
+
+	pool = kcalloc(nr_node_ids, sizeof(*pool), GFP_KERNEL|__GFP_NOFAIL);
+	for_each_online_node(i) {
+		crng = kmalloc_node(sizeof(struct crng_state),
+				    GFP_KERNEL | __GFP_NOFAIL, i);
+		spin_lock_init(&crng->lock);
+		crng_initialize(crng);
+		pool[i] = crng;
+	}
+	/* pairs with READ_ONCE() in select_crng() */
+	if (cmpxchg_release(&crng_node_pool, NULL, pool) != NULL) {
+		for_each_node(i)
+			kfree(pool[i]);
+		kfree(pool);
+	}
+}
+
+static DECLARE_WORK(numa_crng_init_work, do_numa_crng_init);
+
+static void numa_crng_init(void)
+{
+	schedule_work(&numa_crng_init_work);
+}
+
+static struct crng_state *select_crng(void)
+{
+	struct crng_state **pool;
+	int nid = numa_node_id();
+
+	/* pairs with cmpxchg_release() in do_numa_crng_init() */
+	pool = READ_ONCE(crng_node_pool);
+	if (pool && pool[nid])
+		return pool[nid];
+
+	return &primary_crng;
+}
+#else
+static void numa_crng_init(void) {}
+
+static struct crng_state *select_crng(void)
+{
+	return &primary_crng;
+}
+#endif
+
+static void crng_reseed(struct crng_state *crng, struct entropy_store *r)
+{
+	unsigned long	flags;
+	int		i, num;
+	union {
+		__u8	block[CHACHA20_BLOCK_SIZE];
+		__u32	key[8];
+	} buf;
+
+	if (r) {
+		num = extract_entropy(r, &buf, 32, 16, 0);
+		if (num == 0)
+			return;
+	} else {
+		_extract_crng(&primary_crng, buf.block);
+		_crng_backtrack_protect(&primary_crng, buf.block,
+					CHACHA20_KEY_SIZE);
+	}
+	spin_lock_irqsave(&crng->lock, flags);
+	for (i = 0; i < 8; i++) {
+		unsigned long	rv;
+		if (!arch_get_random_seed_long(&rv) &&
+		    !arch_get_random_long(&rv))
+			rv = random_get_entropy();
+		crng->state[i+4] ^= buf.key[i] ^ rv;
+	}
+	memzero_explicit(&buf, sizeof(buf));
+	WRITE_ONCE(crng->init_time, jiffies);
+	if (crng == &primary_crng && crng_init < 2) {
+		numa_crng_init();
+		crng_init = 2;
+		process_random_ready_list();
+		wake_up_interruptible(&crng_init_wait);
+		pr_notice("random: crng init done\n");
+		if (unseeded_warning.missed) {
+			pr_notice("random: %d get_random_xx warning(s) missed "
+				  "due to ratelimiting\n",
+				  unseeded_warning.missed);
+			unseeded_warning.missed = 0;
+		}
+		if (urandom_warning.missed) {
+			pr_notice("random: %d urandom warning(s) missed "
+				  "due to ratelimiting\n",
+				  urandom_warning.missed);
+			urandom_warning.missed = 0;
+		}
+	}
+	spin_unlock_irqrestore(&crng->lock, flags);
+}
+
+static inline void crng_wait_ready(void)
+{
+	wait_event_interruptible(crng_init_wait, crng_ready());
+}
+
+static void _extract_crng(struct crng_state *crng,
+			  __u8 out[CHACHA20_BLOCK_SIZE])
+{
+	unsigned long v, flags, init_time;
+
+	if (crng_ready()) {
+		init_time = READ_ONCE(crng->init_time);
+		if (time_after(READ_ONCE(crng_global_init_time), init_time) ||
+		    time_after(jiffies, init_time + CRNG_RESEED_INTERVAL))
+			crng_reseed(crng, crng == &primary_crng ?
+				    &input_pool : NULL);
+	}
+	spin_lock_irqsave(&crng->lock, flags);
+	if (arch_get_random_long(&v))
+		crng->state[14] ^= v;
+	chacha20_block(&crng->state[0], out);
+	if (crng->state[12] == 0)
+		crng->state[13]++;
+	spin_unlock_irqrestore(&crng->lock, flags);
+}
+
+static void extract_crng(__u8 out[CHACHA20_BLOCK_SIZE])
+{
+	_extract_crng(select_crng(), out);
+}
+
+/*
+ * Use the leftover bytes from the CRNG block output (if there is
+ * enough) to mutate the CRNG key to provide backtracking protection.
+ */
+static void _crng_backtrack_protect(struct crng_state *crng,
+				    __u8 tmp[CHACHA20_BLOCK_SIZE], int used)
+{
+	unsigned long	flags;
+	__u32		*s, *d;
+	int		i;
+
+	used = round_up(used, sizeof(__u32));
+	if (used + CHACHA20_KEY_SIZE > CHACHA20_BLOCK_SIZE) {
+		extract_crng(tmp);
+		used = 0;
+	}
+	spin_lock_irqsave(&crng->lock, flags);
+	s = (__u32 *) &tmp[used];
+	d = &crng->state[4];
+	for (i=0; i < 8; i++)
+		*d++ ^= *s++;
+	spin_unlock_irqrestore(&crng->lock, flags);
+}
+
+static void crng_backtrack_protect(__u8 tmp[CHACHA20_BLOCK_SIZE], int used)
+{
+	_crng_backtrack_protect(select_crng(), tmp, used);
+}
+
+static ssize_t extract_crng_user(void __user *buf, size_t nbytes)
+{
+	ssize_t ret = 0, i = CHACHA20_BLOCK_SIZE;
+	__u8 tmp[CHACHA20_BLOCK_SIZE];
+	int large_request = (nbytes > 256);
+
+	while (nbytes) {
+		if (large_request && need_resched()) {
+			if (signal_pending(current)) {
+				if (ret == 0)
+					ret = -ERESTARTSYS;
+				break;
+			}
+			schedule();
+		}
+
+		extract_crng(tmp);
+		i = min_t(int, nbytes, CHACHA20_BLOCK_SIZE);
+		if (copy_to_user(buf, tmp, i)) {
+			ret = -EFAULT;
+			break;
+		}
+
+		nbytes -= i;
+		buf += i;
+		ret += i;
+	}
+	crng_backtrack_protect(tmp, i);
+
+	/* Wipe data just written to memory */
+	memzero_explicit(tmp, sizeof(tmp));
 
 	spin_lock_irqsave(&random_ready_chain_lock, flags);
 	if (!crng_ready())
