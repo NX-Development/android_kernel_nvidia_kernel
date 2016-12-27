@@ -103,14 +103,8 @@ static int random_min_urandom_seed = 60;
  * crng_init is protected by base_crng->lock, and only increases
  * its value (from empty->early->ready).
  */
-static enum {
-	CRNG_EMPTY = 0, /* Little to no entropy collected */
-	CRNG_EARLY = 1, /* At least POOL_EARLY_BITS collected */
-	CRNG_READY = 2  /* Fully initialized with POOL_READY_BITS collected */
-} crng_init __read_mostly = CRNG_EMPTY;
-#define crng_ready() (likely(crng_init >= CRNG_READY))
-/* Various types of waiters for crng_init->CRNG_READY transition. */
-static DECLARE_WAIT_QUEUE_HEAD(crng_init_wait);
+static DECLARE_WAIT_QUEUE_HEAD(random_read_wait);
+static DECLARE_WAIT_QUEUE_HEAD(random_write_wait);
 static struct fasync_struct *fasync;
 static DEFINE_SPINLOCK(random_ready_chain_lock);
 static RAW_NOTIFIER_HEAD(random_ready_chain);
