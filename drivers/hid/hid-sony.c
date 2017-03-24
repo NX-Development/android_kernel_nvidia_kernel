@@ -2543,6 +2543,7 @@ static inline void sony_cancel_work_sync(struct sony_sc *sc)
 	}
 }
 
+
 static int sony_input_configured(struct hid_device *hdev,
 					struct hid_input *hidinput)
 {
@@ -2838,6 +2839,9 @@ static void sony_remove(struct hid_device *hdev)
 
 	if (sc->sensor_dev)
 		sony_unregister_sensors(sc);
+
+	if (sc->quirks & DUALSHOCK4_CONTROLLER_BT)
+		device_remove_file(&sc->hdev->dev, &dev_attr_bt_poll_interval);
 
 	if (sc->quirks & DUALSHOCK4_CONTROLLER_BT)
 		device_remove_file(&sc->hdev->dev, &dev_attr_bt_poll_interval);
