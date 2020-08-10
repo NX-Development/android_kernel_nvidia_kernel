@@ -2,6 +2,7 @@
  * Hash: Hash algorithms under the crypto API
  * 
  * Copyright (c) 2008 Herbert Xu <herbert@gondor.apana.org.au>
+ * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -60,6 +61,9 @@ struct ahash_request {
 
 	/* This field may only be used by the ahash API code. */
 	void *priv;
+
+	/* This field used for SHAKE128/SHAKE256 where destination size vary */
+	unsigned int dst_size;
 
 	void *__ctx[] CRYPTO_MINALIGN_ATTR;
 };
