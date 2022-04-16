@@ -529,7 +529,6 @@ struct pci_host_bridge *pci_alloc_host_bridge(size_t priv)
 		return NULL;
 
 	INIT_LIST_HEAD(&bridge->windows);
-	bridge->dev.release = pci_release_host_bridge_dev;
 
 	return bridge;
 }
@@ -2337,6 +2336,7 @@ static struct pci_bus *pci_create_root_bus_msi(struct device *parent,
 		return NULL;
 
 	bridge->dev.parent = parent;
+	bridge->dev.release = pci_release_host_bridge_dev;
 
 	list_splice_init(resources, &bridge->windows);
 	bridge->sysdata = sysdata;
