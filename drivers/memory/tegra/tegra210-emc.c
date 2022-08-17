@@ -2322,7 +2322,7 @@ static struct resource tegra210_init_emc_data_smc(struct platform_device *pdev)
 	regs.args[4] = 0;
 	regs.args[5] = 0;
 	pmc_send_smc(TEGRA_SIP_EMC_COMMAND_FID, &regs);
-	base = regs.args[0];
+	base = regs.args[0] != (u64)(-ENOTSUP) ? regs.args[0] : 0;
 
 	regs.args[0] = EMC_TABLE_SIZE;
 	regs.args[1] = 0;
@@ -2331,7 +2331,9 @@ static struct resource tegra210_init_emc_data_smc(struct platform_device *pdev)
 	regs.args[4] = 0;
 	regs.args[5] = 0;
 	pmc_send_smc(TEGRA_SIP_EMC_COMMAND_FID, &regs);
-	size = regs.args[0];
+	size = regs.args[0] != (u64)(-ENOTSUP) ? regs.args[0] : 0;
+	if (!size)
+		base = 0;
 
 	table.start = base;
 	table.end = base + size - 1;
@@ -2563,6 +2565,10 @@ static int tegra210_init_emc_data(struct platform_device *pdev)
 
 	if (of_find_property(pdev->dev.of_node, "nvidia,use-smc-emc-tables", NULL)) {
 		table_res = tegra210_init_emc_data_smc(pdev);
+		if (!table_res.start) {
+			dev_err(&pdev->dev, "SMC EMC table not supported\n");
+			return -ENODATA;
+		}
 
 		tegra_emc_table_normal = devm_ioremap_resource(&pdev->dev, &table_res);
 		tegra_emc_table_derated = NULL;
