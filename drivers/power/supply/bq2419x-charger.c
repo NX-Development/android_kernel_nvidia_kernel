@@ -2236,9 +2236,6 @@ static int bq2419x_probe(struct i2c_client *client,
 	int ret = 0;
 	int val = 0;
 
-	if (!battery_gauge_present())
-		return -EPROBE_DEFER;
-
 	if (client->dev.platform_data)
 		pdata = client->dev.platform_data;
 
