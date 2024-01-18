@@ -5,6 +5,8 @@
  * Copyright (C) 2011 Samsung Electronics
  * MyungJoo Ham <myungjoo.ham@samsung.com>
  *
+ * Copyright (c) 2013-2017, NVIDIA CORPORATION.  All rights reserved.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -24,15 +26,8 @@
 #define __MAX17042_BATTERY_H_
 
 #define MAX17042_STATUS_BattAbsent	(1 << 3)
-#define MAX17042_BATTERY_FULL		(95)   /* Recommend. FullSOCThr value */
+#define MAX17042_BATTERY_FULL	(100)
 #define MAX17042_DEFAULT_SNS_RESISTOR	(10000)
-#define MAX17042_DEFAULT_VMIN		(3000)
-#define MAX17042_DEFAULT_VMAX		(4500) /* LiHV cell max */
-#define MAX17042_DEFAULT_TEMP_MIN	(0)    /* For sys without temp sensor */
-#define MAX17042_DEFAULT_TEMP_MAX	(700)  /* 70 degrees Celcius */
-
-/* Consider RepCap which is less then 10 units below FullCAP full */
-#define MAX17042_FULL_THRESHOLD		10
 
 #define MAX17042_CHARACTERIZATION_DATA_SIZE 48
 
@@ -91,7 +86,7 @@ enum max17042_register {
 	MAX17042_T_empty	= 0x34,
 
 	MAX17042_FullCAP0       = 0x35,
-	MAX17042_IAvg_empty	= 0x36,
+	MAX17042_LAvg_empty	= 0x36,
 	MAX17042_FCTC		= 0x37,
 	MAX17042_RCOMP0		= 0x38,
 	MAX17042_TempCo		= 0x39,
@@ -106,7 +101,7 @@ enum max17042_register {
 	MAX17042_dPacc		= 0x46,
 
 	MAX17042_VFSOC0		= 0x48,
-
+	MAX17042_QH0		= 0x4C,
 	MAX17042_QH		= 0x4D,
 	MAX17042_QL		= 0x4E,
 
@@ -186,7 +181,7 @@ struct max17042_config_data {
 	u16	fullcap;	/* 0x10 */
 	u16	fullcapnom;	/* 0x23 */
 	u16	socempty;	/* 0x33 */
-	u16	iavg_empty;	/* 0x36 */
+	u16	lavg_empty;	/* 0x36 */
 	u16	dqacc;		/* 0x45 */
 	u16	dpacc;		/* 0x46 */
 	u16	qrtbl00;	/* 0x12 */
@@ -226,6 +221,9 @@ struct max17042_platform_data {
 	int         vmax;	/* in millivolts */
 	int         temp_min;	/* in tenths of degree Celsius */
 	int         temp_max;	/* in tenths of degree Celsius */
+	u32 threshold_soc;
+	u32 maximum_soc;
+	bool is_battery_present;
 };
 
 #endif /* __MAX17042_BATTERY_H_ */
