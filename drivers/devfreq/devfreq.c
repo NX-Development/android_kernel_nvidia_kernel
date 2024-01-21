@@ -1259,7 +1259,6 @@ static ssize_t trans_stat_show(struct device *dev,
 	ssize_t len;
 	int i, j;
 	unsigned int max_state = devfreq->profile->max_state;
-	int prev_freq_level;
 	unsigned long prev_freq;
 
 	if (max_state == 0)
