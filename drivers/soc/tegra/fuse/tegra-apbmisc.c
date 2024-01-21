@@ -19,6 +19,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/io.h>
+#include <linux/random.h>
 #include <linux/hw_random.h>
 
 #include <soc/tegra/fuse.h>
