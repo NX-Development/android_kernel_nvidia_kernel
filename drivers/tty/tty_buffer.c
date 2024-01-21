@@ -545,6 +545,13 @@ static void flush_to_ldisc(struct work_struct *work)
 			break;
 		head->read += count;
 
+		remain_count = atomic_read(&buf->current_data_count);
+		if (remain_count >= count)
+			atomic_set(&buf->current_data_count,
+				   (remain_count - count));
+		else
+			atomic_set(&buf->current_data_count, 0);
+
 		if (need_resched())
 			cond_resched();
 	}
