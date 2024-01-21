@@ -152,9 +152,6 @@ int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 	int lev, prev_lev, ret = 0;
 	unsigned long cur_time;
 
-	if (devfreq->suspended)
-		return 0;
-
 	lockdep_assert_held(&devfreq->lock);
 	cur_time = jiffies;
 
@@ -1256,17 +1253,8 @@ static ssize_t trans_stat_show(struct device *dev,
 	}
 	mutex_unlock(&devfreq->lock);
 
-	/* round the current frequency */
-	prev_freq_level = devfreq_get_freq_level(devfreq,
-						 devfreq->previous_freq);
-
-	if (prev_freq_level < 0)
-		prev_freq = devfreq->previous_freq;
-	else
-		prev_freq = devfreq->profile->freq_table[prev_freq_level];
-
-	len = snprintf(buf, PAGE_SIZE, "     From  :   To\n");
-	len += snprintf(buf + len, PAGE_SIZE - len, "           :");
+	len = sprintf(buf, "     From  :   To\n");
+	len += sprintf(buf + len, "           :");
 	for (i = 0; i < max_state; i++)
 		len += snprintf(buf + len, PAGE_SIZE - len, "%10lu",
 				devfreq->profile->freq_table[i]);

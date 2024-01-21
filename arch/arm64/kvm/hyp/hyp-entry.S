@@ -228,6 +228,17 @@ el2_error:
 	restore_caller_saved_regs_vect
 
 	eret
+
+el2_error:
+	save_caller_saved_regs_vect
+	stp     x29, x30, [sp, #-16]!
+
+	bl	kvm_unexpected_el2_exception
+
+	ldp     x29, x30, [sp], #16
+	restore_caller_saved_regs_vect
+
+	eret
 	dsb nsh
 	isb
 

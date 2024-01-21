@@ -48,8 +48,8 @@ static inline __sum16 ip_fast_csum(const void *iph, unsigned int ihl)
 					: "r" (iph));
 	iph += 16;
 	n -= 4;
-	tmp.val += ((tmp.val >> 64) | (tmp.val << 64));
-	sum = tmp.val >> 64;
+	tmp += ((tmp >> 64) | (tmp << 64));
+	sum = tmp >> 64;
 	do {
 		sum += *(const u32 *)iph;
 		iph += 4;

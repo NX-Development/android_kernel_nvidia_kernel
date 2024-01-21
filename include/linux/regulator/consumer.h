@@ -515,12 +515,6 @@ static inline int regulator_set_load(struct regulator *regulator, int load_uA)
 	return 0;
 }
 
-static inline int regulator_set_vsel_volatile(struct regulator *regulator,
-					      bool is_volatile)
-{
-	return 0;
-}
-
 static inline int regulator_allow_bypass(struct regulator *regulator,
 					 bool allow)
 {

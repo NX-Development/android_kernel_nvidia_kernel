@@ -179,7 +179,6 @@ static struct smmu_client *tegra_smmu_find_client(struct smmu_device *smmu,
 
 	while (node) {
 		struct smmu_client *client;
-
 		client = container_of(node, struct smmu_client, node);
 		if (dev < client->dev)
 			node = node->rb_left;
