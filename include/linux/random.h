@@ -10,8 +10,6 @@
 
 #include <uapi/linux/random.h>
 
-struct notifier_block;
-
 void add_device_randomness(const void *buf, size_t len);
 void __init add_bootloader_randomness(const void *buf, size_t len);
 void add_input_randomness(unsigned int type, unsigned int code,
@@ -73,16 +71,6 @@ declare_get_random_var_wait(u64, u32)
 declare_get_random_var_wait(int, unsigned int)
 declare_get_random_var_wait(long, unsigned long)
 #undef declare_get_random_var
-
-/*
- * This is designed to be standalone for just prandom
- * users, but for now we include it from <linux/random.h>
- * for legacy reasons.
- */
-static inline u32 prandom_u32_max(u32 ep_ro)
-{
-	return (u32)(((u64) prandom_u32() * ep_ro) >> 32);
-}
 
 /*
  * Handle minimum values for seeds
